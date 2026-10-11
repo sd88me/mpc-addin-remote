@@ -14,6 +14,7 @@ struct conf {
     int nice;                 // the addin threads' nice value, 0..19
     int mcp;                  // mcp=0 turns the MCP endpoint (/mcp) off
     char mcp_files[256];      // folders MCP may read files from, comma-separated, or none
+    int buttons_input;        // 1: give MPC's button input a sequencer port when nothing else does (src/surface.c)
 };
 
 void conf_defaults(struct conf *c);

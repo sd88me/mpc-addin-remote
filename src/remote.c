@@ -11,6 +11,7 @@
 #include "mcp.h"
 #include "page.h"
 #include "png.h"
+#include "surface.h"
 #include "touch.h"
 #include "version.h"
 #include <arpa/inet.h>
@@ -520,6 +521,7 @@ __attribute__((visibility("default"))) int mpc_remote_addin_start(void)
     int bad = conf_load(&C, path);
     if (bad) LOG("%d line(s) of %s not understood, ignored\n", bad, path);
     if (!C.enabled) { LOG("disabled in %s\n", path); return -1; }
+    surface_enable(C.buttons_input);
     if (files_set_roots(C.mcp_files)) { LOG("mcp_files=%s not understood: MCP file access is off\n", C.mcp_files); files_set_roots("none"); }
     cap_set_rotation(C.screen_rotate);
     sigset_t all, old;
