@@ -5,6 +5,7 @@
 #define _GNU_SOURCE
 #include "mcp.h"
 #include "buttons.h"
+#include "keyboard.h"
 #include "capture.h"
 #include "device.h"
 #include "image.h"
@@ -696,6 +697,21 @@ static void t_press_button(struct args *a, struct result *r)
     free(before.rgb);
 }
 
+static void t_keys(struct args *a, struct result *r, int text)
+{
+    char val[1024], e[200];
+    int mode, skipped = 0;
+    if (arg_str(a, text ? "text" : "key", 1, NULL, val, sizeof val) || arg_shot(a, 1, &mode)) { fail(r, "%s", a->err); return; }
+    struct frame before;
+    grab(&before, 1);
+    if (text ? keyboard_type(val, &skipped, e, sizeof e) : keyboard_press(val, e, sizeof e)) { fail(r, "%s", e); free(before.rgb); return; }
+    char did[96];
+    if (text) snprintf(did, sizeof did, "Typed %d character(s)%s", (int)strlen(val), skipped ? " (some had no key and were skipped)" : "");
+    else snprintf(did, sizeof did, "Pressed %.60s", val);
+    report_change(r, &before, mode, did);
+    free(before.rgb);
+}
+
 static void t_learn_button(struct args *a, struct result *r)
 {
     char name[48], e[200];
@@ -921,6 +937,8 @@ static void call_tool(struct sb *o, const char *s, const struct jtok *t, int id,
     else if (!strcmp(name, "list_buttons")) t_list_buttons(&r);
     else if (!strcmp(name, "press_button")) t_press_button(&a, &r);
     else if (!strcmp(name, "learn_button")) t_learn_button(&a, &r);
+    else if (!strcmp(name, "type_text")) t_keys(&a, &r, 1);
+    else if (!strcmp(name, "press_key")) t_keys(&a, &r, 0);
     else if (!strcmp(name, "midi_listen")) t_listen(&a, &r);
     else if (!strcmp(name, "midi_status")) t_midi_status(&r);
     else if (!strcmp(name, "device_status")) t_status(&r);

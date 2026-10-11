@@ -171,6 +171,19 @@ TOOLS = [
      obj({"name": {"type": "string", "description": "The name to give it, letters, digits and - (for example PLAY)."},
           "timeout_ms": {"type": "integer", "minimum": 1000, "maximum": 30000, "default": 10000,
                          "description": "How long to wait for the press."}}, ("name",))),
+    ("type_text", "Type text", False,
+     "Type text on a keyboard plugged into the device, into whatever text field MPC has focused (a name, a search, a "
+     "file name). Tap the field first so MPC's on-screen keyboard opens, then call this; \\n is Enter. US layout: "
+     "characters without a key are skipped, and MPC's own field may filter some (a file name refuses ? and !). Returns "
+     "a screenshot once the screen has settled." + CHANGED,
+     obj({"text": {"type": "string", "description": "The text to type (up to 1000 characters)."},
+          "screenshot": SHOT}, ("text",))),
+    ("press_key", "Press a keyboard key", False,
+     "Press one key on the device's keyboard: Enter, Backspace, Tab, Escape, Delete, Up, Down, Left, Right, Home, "
+     "End, PageUp, PageDown, F1-F12 or a single character, with modifiers joined by +, for example Shift+Tab or "
+     "Ctrl+A. Works while a text field has focus (Backspace to correct, Enter to accept)." + CHANGED,
+     obj({"key": {"type": "string", "description": "The key, for example Enter or Ctrl+A (case doesn't matter)."},
+          "screenshot": SHOT}, ("key",))),
     ("device_status", "Device status", True,
      "The device now: OS and kernel, uptime, load and CPU use (all cores and MPC's own), memory, temperatures, free "
      "space on each storage, and network addresses.",

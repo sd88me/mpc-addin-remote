@@ -8,6 +8,7 @@
 #include "capture.h"
 #include "conf.h"
 #include "device.h"
+#include "keyboard.h"
 #include "mcp.h"
 #include "page.h"
 #include "png.h"
@@ -409,6 +410,27 @@ static void handle(int fd)
         if (buttons_learn(name, query_int(q, "timeout", 15000, 1000, 30000), &note, &ch, e, sizeof e)) { reply_text(fd, "409 Conflict", e); return; }
         snprintf(msg, sizeof msg, "Recorded %s as note %d on channel %d", name, note, ch);
         reply_text(fd, "200 OK", msg);
+    } else if (!strcmp(path, "/text") || !strcmp(path, "/key")) {   // the virtual keyboard (src/keyboard.c)
+        char val[1024] = "", e[200];
+        const char *vq = q ? strstr(q, path[1] == 't' ? "s=" : "name=") : NULL;
+        if (vq && (vq == q || vq[-1] == '&')) {
+            vq += path[1] == 't' ? 2 : 5;
+            size_t k = 0;
+            while (*vq && *vq != '&' && k < sizeof val - 1) {   // percent-decoded; + is a plus (encodeURIComponent)
+                if (vq[0] == '%' && isxdigit((unsigned char)vq[1]) && isxdigit((unsigned char)vq[2])) {
+                    char h[3] = { vq[1], vq[2], 0 };
+                    val[k++] = (char)strtol(h, NULL, 16);
+                    vq += 3;
+                } else val[k++] = *vq++;
+            }
+            val[k] = 0;
+        }
+        if (!val[0]) { reply_text(fd, "400 Bad Request", path[1] == 't' ? "s (the text) is needed" : "name (the key) is needed"); return; }
+        int skipped = 0;
+        int rc = path[1] == 't' ? keyboard_type(val, &skipped, e, sizeof e) : keyboard_press(val, e, sizeof e);
+        if (rc) { reply_text(fd, "409 Conflict", e); return; }
+        if (skipped) { snprintf(e, sizeof e, "ok, %d character(s) have no key and were skipped", skipped); reply_text(fd, "200 OK", e); return; }
+        reply_text(fd, "200 OK", "ok");
     } else if (!strcmp(path, "/up")) {
         touch_up();
         reply_text(fd, "200 OK", "ok");

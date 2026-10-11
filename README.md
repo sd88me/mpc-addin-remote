@@ -66,6 +66,7 @@ Tools:
 | `get_screen_info` | the screen size, whether the display and touchscreen were found, the version |
 | `play_notes` | play notes or chords (names like `C3`, `F#2`, or numbers) with a length and velocity, through MPC's MIDI input |
 | `send_midi` | any MIDI message: CC, program change, pitch bend, pressure, transport (start/stop/continue/clock), MMC, raw SysEx |
+| `type_text`, `press_key` | type into the text field MPC has focused, through a virtual USB keyboard (Enter, Backspace, arrows, `Ctrl+A` ...) |
 | `list_buttons`, `press_button`, `learn_button` | the device's hardware buttons: list them, press one (transport, views, arrows, menu ...), or teach the server a button by pressing it on the device |
 | `midi_listen` | collect what MPC sends to the addin's MIDI input port for a while |
 | `midi_status` | the addin's MIDI port and the device's MIDI clients and connections |
@@ -136,6 +137,7 @@ An addin shares MPC's process, so it is written so that it can't hurt MPC:
 | `nice` | 10 | the addin threads' nice value (0 to 19) |
 | `mcp` | 1 | 0 turns the MCP endpoint (`/mcp`) off |
 | `mcp_files` | /media,/sdcard,/data/mpc-addins | the folders MCP's file tools may read, comma-separated absolute paths (at most 8), or `none` |
+| `buttons_input` | 1 | 1 lets the addin add button presses to MPC's button input itself (no MockbaMod needed); 0 leaves that input alone |
 
 Settings are read when MPC starts.
 
@@ -204,9 +206,11 @@ CI (`.github/workflows`): `test.yml` runs the tests and the armhf build on every
 
 ## Hardware buttons
 
-MPC's control surface sends every button as a MIDI note on the device's own port ("... Private"). The addin sends the
-same note to MPC's own input for that port (a "Virtual RawMIDI" port, found by name), so MPC sees a press. It does this
-from a port of its own that nothing can subscribe to, so a button note never reaches a track as a note.
+MPC's control surface sends every button as a MIDI note on the device's own port ("... Private"), which MPC reads as
+raw MIDI. The addin hooks that read (`snd_rawmidi_open`, `snd_rawmidi_read`, `poll`) and adds its presses to what MPC
+reads, between two of the hardware's own messages, so MPC sees a press and nothing needs MockbaMod. If MPC's input is
+something else (MockbaMod's MidiLoop swaps in a "Virtual RawMIDI" port), the addin sends the note to that port instead.
+`buttons_input=0` turns the first way off. A button note never reaches a track as a note.
 
 - **Akai Force:** the buttons are built in, found by the "Akai Pro Force" MIDI client: PLAY, STOP, REC, UNDO, SAVE,
   MENU, MATRIX, CLIP, MIXER, NOTE, KNOBS, LAUNCH, EDIT, SHIFT, COPY, MUTE, SOLO, ARM and the four arrows (measured on a
@@ -218,6 +222,15 @@ from a port of its own that nothing can subscribe to, so a button note never rea
   `buttons.conf` from another device's owner is a profile: send it to be added as a built-in one.
 - Buttons that only act together with another (SHIFT, EDIT, COPY ...) do nothing pressed alone from here.
 - Real presses: PLAY plays, REC records, UNDO undoes.
+
+## Keyboard
+
+`/text?s=...` and `/key?name=...` (and the `type_text` and `press_key` MCP tools) type on a virtual USB keyboard
+(uinput) that MPC reads like a plugged-in one, so they work in any text field MPC has focused: tap the field first so
+the on-screen keyboard opens, then type. The page has a **Keyboard** switch: while it is on, what you type in the
+browser goes to the device (Enter, Backspace, Tab, Escape, arrows, `Ctrl+` shortcuts too), and a box sends or pastes a
+block of text. US layout; characters without a key are skipped, and a field may refuse some itself (a file name takes
+no `?` or `!`). The keyboard is created when first used, and needs `/dev/uinput` (the Force has it).
 
 ## Not included
 

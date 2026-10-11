@@ -7,12 +7,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 B=build/host
 mkdir -p "$B"
-SRC="src/remote.c src/capture.c src/png.c src/touch.c src/conf.c src/json.c src/image.c src/mcp.c src/midi.c src/device.c src/buttons.c src/surface.c"
+SRC="src/remote.c src/capture.c src/png.c src/touch.c src/conf.c src/json.c src/image.c src/mcp.c src/midi.c src/device.c src/buttons.c src/surface.c src/keyboard.c"
 W="-std=gnu11 -O1 -g -Wall -Wextra -Werror -DREMOTE_TEST -fno-omit-frame-pointer"
 
 python3 tools/gen_mcp_tools.py --check
 cc $W -fsanitize=address,undefined -fno-sanitize-recover=all -o "$B/unit" tests/unit_test.c src/conf.c src/png.c src/touch.c \
-  src/json.c src/image.c src/buttons.c src/midi.c src/surface.c -ldl -lpthread
+  src/json.c src/image.c src/buttons.c src/midi.c src/surface.c src/keyboard.c -ldl -lpthread
 "$B/unit"
 cc $W -fPIC -shared -o "$B/libfake_asound.so" tests/fake_asound.c
 cc $W -fsanitize=address,undefined -fno-sanitize-recover=all -o "$B/surface" tests/surface_test.c src/surface.c \

@@ -164,7 +164,7 @@ def protocol(srv, port):
     tools = r["result"]["tools"]
     names = [t["name"] for t in tools]
     want = ["screenshot", "tap", "double_tap", "long_press", "drag", "scroll", "touch", "wait_for_screen",
-            "get_screen_info", "play_notes", "send_midi", "midi_listen", "midi_status", "list_buttons", "press_button", "learn_button", "device_status", "list_files",
+            "get_screen_info", "play_notes", "send_midi", "midi_listen", "midi_status", "list_buttons", "press_button", "learn_button", "type_text", "press_key", "device_status", "list_files",
             "find_files", "read_text_file"]
     check(names == want, f"tools/list names {names}")
     check(all(t["inputSchema"]["type"] == "object" and t["description"] and "readOnlyHint" in t["annotations"] for t in tools),

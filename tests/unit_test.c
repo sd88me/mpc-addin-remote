@@ -4,6 +4,7 @@
 #include "../src/conf.h"
 #include "../src/image.h"
 #include "../src/json.h"
+#include "../src/keyboard.h"
 #include "../src/png.h"
 #include "../src/touch.h"
 #include <stdio.h>
@@ -171,6 +172,26 @@ int main(void)
         CHECK(buttons_parse_line("X=128", &b) && buttons_parse_line("X=-1", &b) && buttons_parse_line("X=1 17", &b)
               && buttons_parse_line("X=1 2 3", &b) && buttons_parse_line("novalue", &b) && buttons_parse_line("a!=1", &b)
               && buttons_parse_line("=1", &b) && buttons_parse_line("# PLAY=1", &b) && buttons_parse_line("", &b));
+    }
+
+    {
+        int code, shift, n = 0;
+        // every printable ASCII character has a key, and no two (key, shift) pairs repeat
+        int seen[256][2] = { { 0 } };
+        for (int c = 32; c < 127; c++) {
+            CHECK(!keyboard_char(c, &code, &shift));
+            CHECK(code > 0 && code < 256 && !seen[code][shift]);
+            seen[code][shift] = 1; n++;
+        }
+        CHECK(n == 95);
+        CHECK(!keyboard_char('a', &code, &shift) && code == 30 && !shift);   // KEY_A
+        CHECK(!keyboard_char('A', &code, &shift) && code == 30 && shift);
+        CHECK(!keyboard_char('!', &code, &shift) && code == 2 && shift);     // KEY_1
+        CHECK(!keyboard_char('?', &code, &shift) && code == 53 && shift);    // KEY_SLASH
+        CHECK(keyboard_char(0, &code, &shift) && keyboard_char('\n', &code, &shift) && keyboard_char(200, &code, &shift));
+        CHECK(!keyboard_key("enter", &code) && code == 28 && !keyboard_key("BACKSPACE", &code) && code == 14);
+        CHECK(!keyboard_key("f12", &code) && code == 88 && !keyboard_key("q", &code) && code == 16);
+        CHECK(keyboard_key("", &code) && keyboard_key("Bogus", &code) && keyboard_key("ab", &code));
     }
 
 #ifdef HAVE_ALSA_HEADER
