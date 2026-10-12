@@ -53,12 +53,30 @@ static struct {
 } R;
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 
+// The next definition of a symbol after this library, by libc's own dlsym called from here. An addin that exports its
+// dlsym (the commander addin before 1.0.1) answers RTLD_NEXT relative to itself, which skips every shim between this
+// library and it; dlvsym is a different symbol, so libc's dlsym is reachable and takes this library as the caller.
+static void *next_sym(const char *name)
+{
+    static void *(*libc_dlsym)(void *, const char *);
+    if (!libc_dlsym) {
+        // the versions of libc's dlsym: 2.34 moved it from libdl into libc
+        static const char *const vers[] = {"2.34", "2.4", "2.17", "2.2.5", "2.0"};
+        for (size_t i = 0; i < sizeof vers / sizeof *vers && !libc_dlsym; i++) {
+            char v[16] = "GLIBC_";
+            strcat(v, vers[i]);
+            libc_dlsym = (void *(*)(void *, const char *))dlvsym(RTLD_DEFAULT, "dlsym", v);
+        }
+    }
+    return (libc_dlsym ? libc_dlsym : dlsym)(RTLD_NEXT, name);
+}
+
 static void load(void)
 {
-    *(void **)&R.open = dlsym(RTLD_NEXT, "snd_rawmidi_open");   // whatever comes next: another shim, or libasound
-    *(void **)&R.read = dlsym(RTLD_NEXT, "snd_rawmidi_read");
-    *(void **)&R.close = dlsym(RTLD_NEXT, "snd_rawmidi_close");
-    *(void **)&R.poll = dlsym(RTLD_NEXT, "poll");
+    *(void **)&R.open = next_sym("snd_rawmidi_open");   // whatever comes next: another shim, or libasound
+    *(void **)&R.read = next_sym("snd_rawmidi_read");
+    *(void **)&R.close = next_sym("snd_rawmidi_close");
+    *(void **)&R.poll = next_sym("poll");
 }
 
 #define QMAX 64
