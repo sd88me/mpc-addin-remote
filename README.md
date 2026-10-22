@@ -96,7 +96,10 @@ endpoint through DNS rebinding. Bodies are limited to 64 KB. `mcp=0` turns the e
   (XRGB/XBGR 8888, RGB565) come from the device; tiled or compressed buffers are refused. The scanout is the
   physical panel, which may be portrait with the UI drawn into it on its side (the MPC Key 37's is 800 x 1280):
   `screen_rotate` turns it upright (auto: a portrait scanout turns 90 degrees, since MPC's UI is landscape). The DRM ioctls are
-  written out in `src/drm_min.h`, so the build needs no kernel or libdrm headers.
+  written out in `src/drm_min.h`, so the build needs no kernel or libdrm headers. **Gen2 (RK3588) risk, untested:**
+  if its display driver scans out through a tiled/compressed modifier (e.g. AFBC) instead of a linear buffer, capture
+  reports `E_FORMAT` ("tiled or compressed: not readable as plain rows") rather than crashing or reading garbage, but
+  the addin would then have no screen at all on that device; not known either way without a real Gen2 run.
 - **PNG:** zlib, loaded at run time (`libz.so.1`, already loaded by MPC); level 1. Before encoding, a CRC of the
   frame is compared with the last one sent, so a still screen costs a capture and a CRC, not an encode.
 - **Touch:** events written into the touchscreen's own evdev node, which MPC reads like a real finger (slot 0 of
@@ -187,9 +190,11 @@ MPC_REMOTE_ADDIN_CONF=/tmp/remote.conf ./standalone ./mpc_remote_addin.so
 ## Building and testing
 
 ```sh
-./build.sh          # build/mpc_remote_addin.so and build/standalone (armhf, Docker + QEMU, glibc <= 2.31 checked)
-tests/test.sh       # offline, on the build machine (x86)
-tools/release.sh 1.0.0   # dist/MPC-Remote-addin-1.0.0-mpc-armv7.zip, with the installer, checked as the catalog does
+./build.sh          # build/mpc_remote_addin.so and build/standalone (armhf, Docker + QEMU, glibc <= 2.31 checked) -- Gen1
+./build-aarch64.sh  # build/aarch64/mpc_remote_addin.so and build/aarch64/standalone (Docker + QEMU, glibc <= 2.39) -- Gen2
+tests/test.sh       # offline, on the build machine (x86); covers both builds equally (no arch-specific source)
+tools/release.sh 1.0.0            # dist/MPC-Remote-addin-1.0.0-mpc-armv7.zip, with the installer, checked as the catalog does
+tools/release-aarch64.sh 1.0.0    # dist/MPC-Remote-addin-1.0.0-mpc-aarch64.zip, same checks -- goes on the same release
 ```
 
 `tests/test.sh` runs the unit tests, then `tests/test_remote.py` and `tests/test_mcp.py` against the server built
@@ -202,7 +207,9 @@ a process named `MPC` and one named otherwise, and runs `tests/test_install.sh`:
 (`BUSYBOX=/path/to/busybox` runs it in the device's shell). The installer and the release tool come from
 mpc-vst-plugins checked out next to this repo (or `MPC_VST=/path`).
 
-CI (`.github/workflows`): `test.yml` runs the tests and the armhf build on every push; `release.yml` (Actions > Release, with the version) builds the zip and attaches it to a draft release, to publish once it has been tried on a device.
+CI (`.github/workflows`): `test.yml` runs the tests and the armhf (Gen1) and aarch64 (Gen2) builds on every push;
+`release.yml` (Actions > Release, with the version) builds both zips and attaches them to one draft release, to
+publish once each has been tried on a matching device.
 
 ## Hardware buttons
 
