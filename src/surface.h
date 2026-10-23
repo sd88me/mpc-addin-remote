@@ -16,6 +16,11 @@ int surface_active(void);
 // Queue a 3-byte channel message for MPC to read as if from the control surface. 0 on success, -1 when it isn't
 // hooked or the queue is full.
 int surface_send(const uint8_t m[3]);
+// A read-only tap on what the hardware sends MPC (3-byte channel messages only, in order). surface_tap_pos() is where
+// the log is now; surface_tap_next(&pos, m) hands over the message at pos and moves on, 0 when there is none yet
+// (-1 and pos jumps to the oldest one kept when the reader fell more than the log's size behind).
+unsigned long surface_tap_pos(void);
+int surface_tap_next(unsigned long *pos, uint8_t m[3]);
 // What happened, a sentence for the user ("" when MPC hasn't opened its button input since the addin loaded).
 const char *surface_status(void);
 

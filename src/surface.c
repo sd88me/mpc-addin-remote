@@ -91,6 +91,49 @@ static struct surface_track hw;
 static uint8_t restatus;                       // put back the hardware's running status before its next data byte
 static char status[200];
 
+#define TAPN 128
+static uint8_t tap[TAPN][3];
+static unsigned long tap_total;                // messages seen since the addin loaded
+static struct { uint8_t status, d[2]; int have, need; int sysex; } tp;   // the tap's own parser of the hardware stream
+
+static void tap_feed_locked(const uint8_t *b, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        uint8_t c = b[i];
+        if (c >= 0xF8) continue;
+        if (c == 0xF0) { tp.sysex = 1; tp.status = 0; tp.have = 0; continue; }
+        if (c == 0xF7) { tp.sysex = 0; continue; }
+        if (c & 0x80) { tp.sysex = 0; tp.have = 0; tp.status = c < 0xF0 ? c : 0; tp.need = tp.status ? data_len(c) : 0; continue; }
+        if (tp.sysex || !tp.status) continue;
+        tp.d[tp.have++] = c;
+        if (tp.have == tp.need) {
+            if (tp.need == 2) {
+                uint8_t *e = tap[tap_total++ % TAPN];
+                e[0] = tp.status; e[1] = tp.d[0]; e[2] = tp.d[1];
+            }
+            tp.have = 0;   // running status: the next data byte starts another message
+        }
+    }
+}
+
+unsigned long surface_tap_pos(void)
+{
+    pthread_mutex_lock(&mtx);
+    unsigned long p = tap_total;
+    pthread_mutex_unlock(&mtx);
+    return p;
+}
+
+int surface_tap_next(unsigned long *pos, uint8_t m[3])
+{
+    int r = 0;
+    pthread_mutex_lock(&mtx);
+    if (tap_total - *pos > TAPN) { *pos = tap_total - TAPN; r = -1; }
+    else if (*pos < tap_total) { memcpy(m, tap[*pos % TAPN], 3); (*pos)++; r = 1; }
+    pthread_mutex_unlock(&mtx);
+    return r;
+}
+
 void surface_enable(int on) { enabled = on; }
 int surface_active(void) { return atomic_load(&priv_in) != NULL; }
 const char *surface_status(void) { return status; }
@@ -196,6 +239,7 @@ __attribute__((visibility("default"))) ssize_t snd_rawmidi_read(snd_rawmidi_t *h
     }
     restatus = 0;
     surface_track_feed(&hw, o, (size_t)r);
+    tap_feed_locked(o, (size_t)r);
     pthread_mutex_unlock(&mtx);
     return r;
 }
