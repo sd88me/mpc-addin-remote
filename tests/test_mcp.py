@@ -131,6 +131,7 @@ def main(exe):
         st_err, text, _ = srv.call("device_status")
         check(not st_err and "Memory:" in text and "Load average:" in text, "device_status")
         midi(srv)
+        buttons(srv)
     finally:
         proc.terminate()
         try:
@@ -163,7 +164,7 @@ def protocol(srv, port):
     tools = r["result"]["tools"]
     names = [t["name"] for t in tools]
     want = ["screenshot", "tap", "double_tap", "long_press", "drag", "scroll", "touch", "wait_for_screen",
-            "get_screen_info", "play_notes", "send_midi", "midi_listen", "midi_status", "device_status", "list_files",
+            "get_screen_info", "play_notes", "send_midi", "midi_listen", "midi_status", "list_buttons", "press_button", "learn_button", "type_text", "press_key", "device_status", "list_files",
             "find_files", "read_text_file"]
     check(names == want, f"tools/list names {names}")
     check(all(t["inputSchema"]["type"] == "object" and t["description"] and "readOnlyHint" in t["annotations"] for t in tools),
@@ -340,6 +341,19 @@ def filesystem(srv, root):
     check(not err and "0 match(es)" in text, "find_files doesn't follow a link out")
 
 
+def buttons(srv):   # no Force here: an empty profile that says why, and presses that fail cleanly (never a crash)
+    err, text, _ = srv.call("list_buttons")
+    check(not err and text.startswith("0 buttons."), f"list_buttons without a profile: {text[:80]}")
+    err, text, _ = srv.call("press_button", {"name": "PLAY"})
+    check(err and "PLAY" in text or err and "button" in text.lower(), f"press_button without a profile is an error: {text[:80]}")
+    err, text, _ = srv.call("press_button", {"name": "pl/ay"})
+    check(err and "isn't a button name" in text, f"press_button: a bad name is refused: {text[:80]}")
+    err, text, _ = srv.call("press_button", {"name": "PLAY", "hold_ms": 5})
+    check(err, "press_button: hold_ms under 10 is refused")
+    err, text, _ = srv.call("learn_button", {"name": "PLAY", "timeout_ms": 1000})
+    check(err, f"learn_button without the device's buttons is an error: {text[:80]}")
+
+
 def midi(srv):
     if not (os.access("/dev/snd/seq", os.R_OK | os.W_OK) and shutil.which("aseqdump") and shutil.which("aseqsend")):
         print("skip mcp: MIDI (no ALSA sequencer, aseqdump or aseqsend here)")
@@ -354,6 +368,10 @@ def midi(srv):
     err, text, _ = srv.call("play_notes", {"notes": ["C3", 64, "G#3"], "duration_ms": 50, "channel": 2})
     check(not err and "C3 (60) E3 (64) G#3 (68)" in text, f"play_notes: {text[:90]}")
     srv.call("play_notes", {"notes": ["Bb-1", "c4"], "mode": "one_by_one", "duration_ms": 20, "gap_ms": 10})
+    err, text, _ = srv.call("send_midi", {"type": "note_on", "note": 60, "velocity": 100})
+    check(not err and "90 3C 64" in text, f"send_midi note_on sends 0x90 (not a note-off): {text}")
+    err, text, _ = srv.call("send_midi", {"type": "note_off", "note": 60})
+    check(not err and "80 3C 00" in text, f"send_midi note_off sends 0x80: {text}")
     srv.call("send_midi", {"type": "cc", "controller": 7, "value": 99, "channel": 16})
     srv.call("send_midi", {"type": "program_change", "value": 5})
     srv.call("send_midi", {"type": "pitch_bend", "bend": -8192})

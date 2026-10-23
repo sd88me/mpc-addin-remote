@@ -18,6 +18,7 @@ void conf_defaults(struct conf *c)
     c->max_clients = 6;
     c->nice = 10;
     c->mcp = 1;
+    c->buttons_input = 1;
     snprintf(c->mcp_files, sizeof c->mcp_files, "/media,/sdcard,/data/mpc-addins");
 }
 
@@ -49,6 +50,7 @@ int conf_line(struct conf *c, const char *line)
     if (!strcmp(k, "max_clients")) return to_int(v, 1, 32, &c->max_clients);
     if (!strcmp(k, "nice")) return to_int(v, 0, 19, &c->nice);
     if (!strcmp(k, "mcp")) return to_int(v, 0, 1, &c->mcp);
+    if (!strcmp(k, "buttons_input")) return to_int(v, 0, 1, &c->buttons_input);
     if (!strcmp(k, "mcp_files")) {
         size_t n = strlen(v);
         if (n >= sizeof c->mcp_files || (strcmp(v, "none") && v[0] != '/')) return -1;

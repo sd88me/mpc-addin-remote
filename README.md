@@ -23,7 +23,8 @@ ssh -N -L 6720:127.0.0.1:6720 root@<device address>
 
 Then use `http://localhost:6720` on that computer, as in the rest of this file. To open it to your network instead,
 set `bind=0.0.0.0` in the settings: anyone who can reach the port can then see and touch the screen, send MIDI into
-MPC and read the `mcp_files` folders.
+MPC and read the `mcp_files` folders. A first install that asks questions (no `-y`) offers to do this for you; the
+answer defaults to no, and reinstalls keep whatever the settings file says.
 
 ## What it does
 
@@ -37,6 +38,8 @@ MPC and read the `mcp_files` folders.
 | `GET /stream[?half=1&fps=N]` | frames as `multipart/x-mixed-replace` PNGs (an unchanged screen sends nothing once its frame has gone out twice) |
 | `GET /tap?x=&y=[&hold=ms]` | touch and release (hold 10 to 4000 ms, default 90) |
 | `GET /down?x=&y=`, `/move?x=&y=`, `/up` | a drag |
+| `GET /buttons` | JSON list of the hardware buttons this device can press |
+| `GET /button?name=[&hold=ms]` | press a hardware button (down, hold 10 to 4000 ms, default 120, up) |
 | `GET /info` | JSON: screen size and pixel format, capture state, the touch device, rotations, the last frame's capture and encode times |
 
 Coordinates are screen pixels (`/info` gives the size).
@@ -63,6 +66,8 @@ Tools:
 | `get_screen_info` | the screen size, whether the display and touchscreen were found, the version |
 | `play_notes` | play notes or chords (names like `C3`, `F#2`, or numbers) with a length and velocity, through MPC's MIDI input |
 | `send_midi` | any MIDI message: CC, program change, pitch bend, pressure, transport (start/stop/continue/clock), MMC, raw SysEx |
+| `type_text`, `press_key` | type into the text field MPC has focused, through a virtual USB keyboard (Enter, Backspace, arrows, `Ctrl+A` ...) |
+| `list_buttons`, `press_button`, `learn_button` | the device's hardware buttons: list them, press one (transport, views, arrows, menu ...), or teach the server a button by pressing it on the device |
 | `midi_listen` | collect what MPC sends to the addin's MIDI input port for a while |
 | `midi_status` | the addin's MIDI port and the device's MIDI clients and connections |
 | `device_status` | OS, uptime, CPU (and MPC's share), memory, temperatures, storage, network addresses |
@@ -91,7 +96,11 @@ endpoint through DNS rebinding. Bodies are limited to 64 KB. `mcp=0` turns the e
   (XRGB/XBGR 8888, RGB565) come from the device; tiled or compressed buffers are refused. The scanout is the
   physical panel, which may be portrait with the UI drawn into it on its side (the MPC Key 37's is 800 x 1280):
   `screen_rotate` turns it upright (auto: a portrait scanout turns 90 degrees, since MPC's UI is landscape). The DRM ioctls are
-  written out in `src/drm_min.h`, so the build needs no kernel or libdrm headers.
+  written out in `src/drm_min.h`, so the build needs no kernel or libdrm headers. **Gen2 (RK3588):** confirmed on a
+  Live III (2026-10-23, `tested.json`) that its display scans out a linear buffer, not a tiled/compressed modifier
+  (e.g. AFBC) -- capture works (`"capture":"ok"`, 1280x800). Had it been tiled, capture would have reported
+  `E_FORMAT` ("tiled or compressed: not readable as plain rows") rather than crashing or reading garbage, but the
+  addin would have had no screen at all on that device; a different Gen2 model's display pipeline is still unknown.
 - **PNG:** zlib, loaded at run time (`libz.so.1`, already loaded by MPC); level 1. Before encoding, a CRC of the
   frame is compared with the last one sent, so a still screen costs a capture and a CRC, not an encode.
 - **Touch:** events written into the touchscreen's own evdev node, which MPC reads like a real finger (slot 0 of
@@ -132,13 +141,14 @@ An addin shares MPC's process, so it is written so that it can't hurt MPC:
 | `nice` | 10 | the addin threads' nice value (0 to 19) |
 | `mcp` | 1 | 0 turns the MCP endpoint (`/mcp`) off |
 | `mcp_files` | /media,/sdcard,/data/mpc-addins | the folders MCP's file tools may read, comma-separated absolute paths (at most 8), or `none` |
+| `buttons_input` | 1 | 1 lets the addin add button presses to MPC's button input itself (no MockbaMod needed); 0 leaves that input alone |
 
 Settings are read when MPC starts.
 
 ## Install
 
-Needs root on the device (SSH). Unzip a release (`MPC-Remote-addin-<version>-mpc-armv7.zip`) on the device and run, as root,
-in its folder:
+Needs root on the device (SSH). Unzip the release zip for your device
+(`MPC-Remote-addin-<version>-mpc-armv7.zip` for Gen1, `-mpc-aarch64.zip` for Gen2) and run, as root, in its folder:
 
 ```sh
 sh install.sh            # asks first; -y doesn't ask, -n doesn't restart MPC, -t <folder> installs elsewhere
@@ -153,6 +163,17 @@ addin, `addin.manifest` describes this one). Its `docs/ADDINS.md` has the rules:
 it keeps, and the drop-in shared by all addins.
 
 If `/data` isn't mounted when MPC starts, the loader prints a warning and MPC starts without the addin.
+
+### If it doesn't start
+
+Check that MPC really loaded it: `tr '\0' '\n' < /proc/$(pidof MPC)/environ | grep LD_PRELOAD` should list
+`mpc_remote_addin.so`, and `wget -qO- http://127.0.0.1:6720/info` on the device should answer. The installer adds the
+library to MPC's systemd service, which is enough on stock MPC OS, and after restarting MPC it checks the new MPC's
+`LD_PRELOAD` and warns if the library isn't there. Mods that launch MPC from their own script can replace that
+environment: MockbaMod, for instance, exports `LD_PRELOAD` from `/dev/shm/.LD_PRELOAD`, which its `AddOns/run_*.sh`
+scripts fill in. When the installer finds a MockbaMod card it also writes `AddOns/run_remote.sh`, which adds the `.so`
+to that file at every boot, and adds it there straight away; the uninstaller removes both. For another launcher like
+that, the addin has to be added to its list by hand.
 
 ### Trying it without restarting MPC
 
@@ -170,9 +191,11 @@ MPC_REMOTE_ADDIN_CONF=/tmp/remote.conf ./standalone ./mpc_remote_addin.so
 ## Building and testing
 
 ```sh
-./build.sh          # build/mpc_remote_addin.so and build/standalone (armhf, Docker + QEMU, glibc <= 2.31 checked)
-tests/test.sh       # offline, on the build machine (x86)
-tools/release.sh 1.0.0   # dist/MPC-Remote-addin-1.0.0-mpc-armv7.zip, with the installer, checked as the catalog does
+./build.sh          # build/mpc_remote_addin.so and build/standalone (armhf, Docker + QEMU, glibc <= 2.31 checked) -- Gen1
+./build-aarch64.sh  # build/aarch64/mpc_remote_addin.so and build/aarch64/standalone (Docker + QEMU, glibc <= 2.39) -- Gen2
+tests/test.sh       # offline, on the build machine (x86); covers both builds equally (no arch-specific source)
+tools/release.sh 1.0.0            # dist/MPC-Remote-addin-1.0.0-mpc-armv7.zip, with the installer, checked as the catalog does
+tools/release-aarch64.sh 1.0.0    # dist/MPC-Remote-addin-1.0.0-mpc-aarch64.zip, same checks -- goes on the same release
 ```
 
 `tests/test.sh` runs the unit tests, then `tests/test_remote.py` and `tests/test_mcp.py` against the server built
@@ -185,12 +208,41 @@ a process named `MPC` and one named otherwise, and runs `tests/test_install.sh`:
 (`BUSYBOX=/path/to/busybox` runs it in the device's shell). The installer and the release tool come from
 mpc-vst-plugins checked out next to this repo (or `MPC_VST=/path`).
 
-CI (`.github/workflows`): `test.yml` runs the tests and the armhf build on every push; `release.yml` (Actions > Release, with the version) builds the zip and attaches it to a draft release, to publish once it has been tried on a device.
+CI (`.github/workflows`): `test.yml` runs the tests and the armhf (Gen1) and aarch64 (Gen2) builds on every push;
+`release.yml` (Actions > Release, with the version) builds both zips and attaches them to one draft release, to
+publish once each has been tried on a matching device.
+
+## Hardware buttons
+
+MPC's control surface sends every button as a MIDI note on the device's own port ("... Private"), which MPC reads as
+raw MIDI. The addin hooks that read (`snd_rawmidi_open`, `snd_rawmidi_read`, `poll`) and adds its presses to what MPC
+reads, between two of the hardware's own messages, so MPC sees a press and nothing needs MockbaMod. If MPC's input is
+something else (MockbaMod's MidiLoop swaps in a "Virtual RawMIDI" port), the addin sends the note to that port instead.
+`buttons_input=0` turns the first way off. A button note never reaches a track as a note.
+
+- **Akai Force:** the buttons are built in, found by the "Akai Pro Force" MIDI client: PLAY, STOP, REC, UNDO, SAVE,
+  MENU, MATRIX, CLIP, MIXER, NOTE, KNOBS, LAUNCH, EDIT, SHIFT, COPY, MUTE, SOLO, ARM and the four arrows (measured on a
+  Force: a press is a channel-1 note on with velocity 127, a release velocity 0). The rest of the Force's buttons are
+  taught with `learn_button`.
+- **Other devices:** start with no buttons. `learn_button` waits for you to press a button on the device and records its
+  note under the name you give. Learned buttons are saved in `buttons.conf` next to the `.so` (`NAME=note [channel]`,
+  edit freely; it overrides a built-in entry of the same name), and the page and `press_button` then use them. A
+  `buttons.conf` from another device's owner is a profile: send it to be added as a built-in one.
+- Buttons that only act together with another (SHIFT, EDIT, COPY ...) do nothing pressed alone from here.
+- Real presses: PLAY plays, REC records, UNDO undoes.
+
+## Keyboard
+
+`/text?s=...` and `/key?name=...` (and the `type_text` and `press_key` MCP tools) type on a virtual USB keyboard
+(uinput) that MPC reads like a plugged-in one, so they work in any text field MPC has focused: tap the field first so
+the on-screen keyboard opens, then type. The page has a **Keyboard** switch: while it is on, what you type in the
+browser goes to the device (Enter, Backspace, Tab, Escape, arrows, `Ctrl+` shortcuts too), and a box sends or pastes a
+block of text. US layout; characters without a key are skipped, and a field may refuse some itself (a file name takes
+no `?` or `!`). The keyboard is created when first used, and needs `/dev/uinput` (the Force has it).
 
 ## Not included
 
-Pressing the hardware buttons, pads and Q-Links (they arrive as MIDI from the control surface, not as input
-events; MCP's `play_notes` plays notes instead), audio, and any login.
+Pressing pads and Q-Links, audio, and any login.
 
 ## License
 

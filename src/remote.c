@@ -4,12 +4,15 @@
 // LD_PRELOAD load it and do nothing. Everything runs on the addin's own threads, at normal scheduling and a low
 // priority, with every signal blocked so MPC's signals still go to MPC's threads.
 #define _GNU_SOURCE
+#include "buttons.h"
 #include "capture.h"
 #include "conf.h"
 #include "device.h"
+#include "keyboard.h"
 #include "mcp.h"
 #include "page.h"
 #include "png.h"
+#include "surface.h"
 #include "touch.h"
 #include "version.h"
 #include <arpa/inet.h>
@@ -369,6 +372,65 @@ static void handle(int fd)
             gesture_unlock();
         }
         reply_text(fd, "200 OK", "ok");
+    } else if (!strcmp(path, "/buttons")) {
+        struct button b[160];
+        int n = buttons_list(b, 160);
+        char out[160 * 48 + 256], *o = out;
+        o += snprintf(o, sizeof out, "[");
+        for (int i = 0; i < n; i++) o += snprintf(o, sizeof out - (size_t)(o - out), "%s\"%s\"", i ? "," : "", b[i].name);
+        snprintf(o, sizeof out - (size_t)(o - out), "]");
+        reply(fd, "200 OK", "application/json", out, strlen(out));
+    } else if (!strcmp(path, "/button")) {
+        char name[48] = "", e[200];
+        const char *nq = q ? strstr(q, "name=") : NULL;
+        if (nq) {
+            nq += 5;
+            size_t k = 0;
+            while (*nq && *nq != '&' && k < sizeof name - 1) name[k++] = *nq++;
+            name[k] = 0;
+        }
+        if (!name[0]) { reply_text(fd, "400 Bad Request", "name is needed"); return; }
+        const char *act = q ? strstr(q, "action=") : NULL;   // press (default), down, up: a page that holds a button
+        int rc = act && !strncmp(act + 7, "down", 4) ? buttons_set(name, 1, e, sizeof e)
+               : act && !strncmp(act + 7, "up", 2) ? buttons_set(name, 0, e, sizeof e)
+               : buttons_press(name, query_int(q, "hold", 120, 10, 4000), e, sizeof e);
+        if (rc) { reply_text(fd, "409 Conflict", e); return; }
+        reply_text(fd, "200 OK", "ok");
+    } else if (!strcmp(path, "/learn")) {   // waits for a press on the device, up to 30 s: the page shows a countdown
+        char name[48] = "", e[200], msg[260];
+        const char *nq = q ? strstr(q, "name=") : NULL;
+        if (nq) {
+            nq += 5;
+            size_t k = 0;
+            while (*nq && *nq != '&' && k < sizeof name - 1) name[k++] = *nq++;
+            name[k] = 0;
+        }
+        int note, ch;
+        if (!name[0]) { reply_text(fd, "400 Bad Request", "name is needed"); return; }
+        if (buttons_learn(name, query_int(q, "timeout", 15000, 1000, 30000), &note, &ch, e, sizeof e)) { reply_text(fd, "409 Conflict", e); return; }
+        snprintf(msg, sizeof msg, "Recorded %s as note %d on channel %d", name, note, ch);
+        reply_text(fd, "200 OK", msg);
+    } else if (!strcmp(path, "/text") || !strcmp(path, "/key")) {   // the virtual keyboard (src/keyboard.c)
+        char val[1024] = "", e[200];
+        const char *vq = q ? strstr(q, path[1] == 't' ? "s=" : "name=") : NULL;
+        if (vq && (vq == q || vq[-1] == '&')) {
+            vq += path[1] == 't' ? 2 : 5;
+            size_t k = 0;
+            while (*vq && *vq != '&' && k < sizeof val - 1) {   // percent-decoded; + is a plus (encodeURIComponent)
+                if (vq[0] == '%' && isxdigit((unsigned char)vq[1]) && isxdigit((unsigned char)vq[2])) {
+                    char h[3] = { vq[1], vq[2], 0 };
+                    val[k++] = (char)strtol(h, NULL, 16);
+                    vq += 3;
+                } else val[k++] = *vq++;
+            }
+            val[k] = 0;
+        }
+        if (!val[0]) { reply_text(fd, "400 Bad Request", path[1] == 't' ? "s (the text) is needed" : "name (the key) is needed"); return; }
+        int skipped = 0;
+        int rc = path[1] == 't' ? keyboard_type(val, &skipped, e, sizeof e) : keyboard_press(val, e, sizeof e);
+        if (rc) { reply_text(fd, "409 Conflict", e); return; }
+        if (skipped) { snprintf(e, sizeof e, "ok, %d character(s) have no key and were skipped", skipped); reply_text(fd, "200 OK", e); return; }
+        reply_text(fd, "200 OK", "ok");
     } else if (!strcmp(path, "/up")) {
         touch_up();
         reply_text(fd, "200 OK", "ok");
@@ -472,9 +534,16 @@ __attribute__((visibility("default"))) int mpc_remote_addin_start(void)
         addin_dir(dir, sizeof dir);
         snprintf(path, sizeof path, "%s/mpc_remote_addin.conf", dir[0] ? dir : ".");
     }
+    {
+        char bf[560];
+        const char *sl = strrchr(path, '/');
+        snprintf(bf, sizeof bf, "%.*s/buttons.conf", sl ? (int)(sl - path) : 1, sl ? path : ".");
+        buttons_init(bf);
+    }
     int bad = conf_load(&C, path);
     if (bad) LOG("%d line(s) of %s not understood, ignored\n", bad, path);
     if (!C.enabled) { LOG("disabled in %s\n", path); return -1; }
+    surface_enable(C.buttons_input);
     if (files_set_roots(C.mcp_files)) { LOG("mcp_files=%s not understood: MCP file access is off\n", C.mcp_files); files_set_roots("none"); }
     cap_set_rotation(C.screen_rotate);
     sigset_t all, old;

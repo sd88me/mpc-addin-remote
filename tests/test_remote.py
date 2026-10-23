@@ -182,6 +182,10 @@ def run(exe, full):
                   and sum(1 for e in ev if e[:2] == (EV_ABS, 0x36)) == 2, "down, move, up")
             check(get(base + "/tap?x=5")[0] == 400, "a tap without y is refused")
             check(get(base + "/tap?max=5&y=5")[0] == 400, "x is not found inside another key")
+            check(get(base + "/text")[0] == 400 and get(base + "/key")[0] == 400, "text and key need a value")
+            check(get(base + "/key?name=Bogus")[0] == 409, "an unknown key is refused")
+            st, _, body = get(base + "/text?s=hi")   # no /dev/uinput on the build machine, or no permission
+            check(st in (200, 409) and (st == 200 or b"keyboard" in body.lower()), f"text without a keyboard device says why: {st} {body[:60]}")
 
             # bad and hostile requests
             check(get(base + "/nope")[0] == 404, "404")

@@ -4,6 +4,8 @@
 // device's status and its files (read-only). Every tool call runs on the connection's own addin thread.
 #define _GNU_SOURCE
 #include "mcp.h"
+#include "buttons.h"
+#include "keyboard.h"
 #include "capture.h"
 #include "device.h"
 #include "image.h"
@@ -34,8 +36,9 @@ static const char INSTRUCTIONS[] =
     "like a finger, plays MIDI into MPC, and reads the device's status and files. Start with screenshot. Every "
     "coordinate is a pixel of the full-size screen with the origin at the top left (get_screen_info gives the size), "
     "whatever zoom a screenshot was taken at; screenshot grid=true labels them. Touch tools return a screenshot once "
-    "the screen settles, and say whether it changed, so a separate screenshot is rarely needed. The hardware buttons, "
-    "pads and knobs can't be pressed from here: use the touchscreen, or play_notes for notes. Changes are real: this "
+    "the screen settles, and say whether it changed, so a separate screenshot is rarely needed. Hardware "
+    "buttons (PLAY, MIXER, the arrows ...) are pressed with press_button (list_buttons says which this device has); "
+    "pads and knobs can't be: use the touchscreen, or play_notes for notes. Changes are real: this "
     "is someone's instrument, so don't delete or overwrite anything unless asked.";
 
 static pthread_mutex_t gesture = PTHREAD_MUTEX_INITIALIZER;
@@ -666,6 +669,58 @@ static void t_play(struct args *a, struct result *r)
     }
 }
 
+static void t_list_buttons(struct result *r)
+{
+    struct button b[160];
+    int n = buttons_list(b, 160);
+    struct sb o = { 0 };
+    sb_printf(&o, "%d button%s. %s\n", n, n == 1 ? "" : "s", buttons_status());
+    for (int i = 0; i < n; i++)
+        sb_printf(&o, "%s%s", i ? ", " : "", b[i].name);
+    if (n) sb_puts(&o, "\nPress one with press_button. A button a profile lacks can be recorded with learn_button.");
+    add_sb_text(r, &o);
+    sb_free(&o);
+}
+
+static void t_press_button(struct args *a, struct result *r)
+{
+    char name[48], e[200];
+    int hold, mode;
+    if (arg_str(a, "name", 1, NULL, name, sizeof name) || arg_int(a, "hold_ms", 120, 10, 4000, &hold)
+        || arg_shot(a, 1, &mode)) { fail(r, "%s", a->err); return; }
+    struct frame before;
+    grab(&before, 1);
+    if (buttons_press(name, hold, e, sizeof e)) { fail(r, "%s", e); free(before.rgb); return; }
+    char did[96];
+    snprintf(did, sizeof did, "Pressed %s", name);
+    report_change(r, &before, mode, did);
+    free(before.rgb);
+}
+
+static void t_keys(struct args *a, struct result *r, int text)
+{
+    char val[1024], e[200];
+    int mode, skipped = 0;
+    if (arg_str(a, text ? "text" : "key", 1, NULL, val, sizeof val) || arg_shot(a, 1, &mode)) { fail(r, "%s", a->err); return; }
+    struct frame before;
+    grab(&before, 1);
+    if (text ? keyboard_type(val, &skipped, e, sizeof e) : keyboard_press(val, e, sizeof e)) { fail(r, "%s", e); free(before.rgb); return; }
+    char did[96];
+    if (text) snprintf(did, sizeof did, "Typed %d character(s)%s", (int)strlen(val), skipped ? " (some had no key and were skipped)" : "");
+    else snprintf(did, sizeof did, "Pressed %.60s", val);
+    report_change(r, &before, mode, did);
+    free(before.rgb);
+}
+
+static void t_learn_button(struct args *a, struct result *r)
+{
+    char name[48], e[200];
+    int ms, note, ch;
+    if (arg_str(a, "name", 1, NULL, name, sizeof name) || arg_int(a, "timeout_ms", 10000, 1000, 30000, &ms)) { fail(r, "%s", a->err); return; }
+    if (buttons_learn(name, ms, &note, &ch, e, sizeof e)) { fail(r, "%s", e); return; }
+    add_text(r, "Recorded %s as note %d on channel %d. Whoever pressed the button on the device also pressed it for MPC.", name, note, ch);
+}
+
 static int hexbytes(const char *s, uint8_t *out, int max)
 {
     int n = 0;
@@ -699,7 +754,7 @@ static void t_send(struct args *a, struct result *r)
     if (is_note && arg_note(a, arg(a, "note"), "note", &note)) { fail(r, "%s", a->err); return; }
     if (!strcmp(type, "note_on") || !strcmp(type, "note_off")) {
         if (arg_int(a, "velocity", !strcmp(type, "note_on") ? 100 : 0, 0, 127, &v)) { fail(r, "%s", a->err); return; }
-        m[0] = (uint8_t)((type[5] == 'n' ? 0x90 : 0x80) | c); m[1] = (uint8_t)note; m[2] = (uint8_t)v; n = 3;
+        m[0] = (uint8_t)((type[6] == 'n' ? 0x90 : 0x80) | c); m[1] = (uint8_t)note; m[2] = (uint8_t)v; n = 3;
     } else if (!strcmp(type, "poly_pressure")) {
         if (arg_int(a, "value", REQUIRED, 0, 127, &v)) { fail(r, "%s", a->err); return; }
         m[0] = 0xA0 | c; m[1] = (uint8_t)note; m[2] = (uint8_t)v; n = 3;
@@ -879,6 +934,11 @@ static void call_tool(struct sb *o, const char *s, const struct jtok *t, int id,
     else if (!strcmp(name, "get_screen_info")) t_info(&r);
     else if (!strcmp(name, "play_notes")) t_play(&a, &r);
     else if (!strcmp(name, "send_midi")) t_send(&a, &r);
+    else if (!strcmp(name, "list_buttons")) t_list_buttons(&r);
+    else if (!strcmp(name, "press_button")) t_press_button(&a, &r);
+    else if (!strcmp(name, "learn_button")) t_learn_button(&a, &r);
+    else if (!strcmp(name, "type_text")) t_keys(&a, &r, 1);
+    else if (!strcmp(name, "press_key")) t_keys(&a, &r, 0);
     else if (!strcmp(name, "midi_listen")) t_listen(&a, &r);
     else if (!strcmp(name, "midi_status")) t_midi_status(&r);
     else if (!strcmp(name, "device_status")) t_status(&r);

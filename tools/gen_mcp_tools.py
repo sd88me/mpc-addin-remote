@@ -150,6 +150,40 @@ TOOLS = [
      "The addin's MIDI ports and what is connected to them (whether MPC has picked up MPC Remote Out yet), and the "
      "other MIDI ports on the device.",
      obj({})),
+    ("list_buttons", "List hardware buttons", True,
+     "The device's hardware buttons this server can press (PLAY, STOP, MIXER, the arrows ...), and where the presses "
+     "go. The Akai Force has a built-in list; any device can be taught with learn_button.",
+     obj({})),
+    ("press_button", "Press a hardware button", False,
+     "Press one of the device's hardware buttons, as if with a finger on it: transport (PLAY, STOP, REC), views "
+     "(MATRIX, MIXER, CLIP, NOTE, KNOBS), the arrows, MENU, SAVE, UNDO, SHIFT and so on. list_buttons gives the names. "
+     "More reliable than touching the screen for these. Real presses: PLAY starts playback, REC records, UNDO undoes, "
+     "so don't press them unless asked. Buttons that only act together with another (SHIFT, EDIT, COPY) need that "
+     "other press at the same time and don't work alone from here." + CHANGED,
+     obj({"name": {"type": "string", "description": "The button, for example PLAY or MIXER (case doesn't matter)."},
+          "hold_ms": {"type": "integer", "minimum": 10, "maximum": 4000, "default": 120,
+                      "description": "How long the button stays down."},
+          "screenshot": SHOT}, ("name",))),
+    ("learn_button", "Teach a hardware button", False,
+     "Record a button of the device under a name: call this, then press that button on the device within the "
+     "timeout. The press also reaches MPC as usual. Saved in buttons.conf next to the addin, so press_button knows it "
+     "from then on.",
+     obj({"name": {"type": "string", "description": "The name to give it, letters, digits and - (for example PLAY)."},
+          "timeout_ms": {"type": "integer", "minimum": 1000, "maximum": 30000, "default": 10000,
+                         "description": "How long to wait for the press."}}, ("name",))),
+    ("type_text", "Type text", False,
+     "Type text on a keyboard plugged into the device, into whatever text field MPC has focused (a name, a search, a "
+     "file name). Tap the field first so MPC's on-screen keyboard opens, then call this; \\n is Enter. US layout: "
+     "characters without a key are skipped, and MPC's own field may filter some (a file name refuses ? and !). Returns "
+     "a screenshot once the screen has settled." + CHANGED,
+     obj({"text": {"type": "string", "description": "The text to type (up to 1000 characters)."},
+          "screenshot": SHOT}, ("text",))),
+    ("press_key", "Press a keyboard key", False,
+     "Press one key on the device's keyboard: Enter, Backspace, Tab, Escape, Delete, Up, Down, Left, Right, Home, "
+     "End, PageUp, PageDown, F1-F12 or a single character, with modifiers joined by +, for example Shift+Tab or "
+     "Ctrl+A. Works while a text field has focus (Backspace to correct, Enter to accept)." + CHANGED,
+     obj({"key": {"type": "string", "description": "The key, for example Enter or Ctrl+A (case doesn't matter)."},
+          "screenshot": SHOT}, ("key",))),
     ("device_status", "Device status", True,
      "The device now: OS and kernel, uptime, load and CPU use (all cores and MPC's own), memory, temperatures, free "
      "space on each storage, and network addresses.",

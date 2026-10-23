@@ -17,14 +17,16 @@ on:
 
 jobs:
   addin:
-    uses: sd88me/mpc-vst-plugins/.github/workflows/addin-release.yml@a4b8f861d07153a2b387d7520331f532f7247502
+    uses: sd88me/mpc-vst-plugins/.github/workflows/addin-release.yml@1acb45cb9a327cc861d8ea29c95b1cb068f568e2
     permissions: { contents: write }
     with:
       tag: remote-addin-v${{ inputs.version }}
       version: ${{ inputs.version }}
-      tools_ref: a4b8f861d07153a2b387d7520331f532f7247502
+      tools_ref: 1acb45cb9a327cc861d8ea29c95b1cb068f568e2
       package_dir: build
       build: ./build.sh
+      package_dir_aarch64: build/aarch64
+      build_aarch64: ./build-aarch64.sh
       host_test: sudo sysctl -q vm.mmap_rnd_bits=28 && python3 -m pip install --quiet mcp && tests/test.sh
       about: "The MPC screen in a browser, and an MCP server so an AI model can see and touch it, play MIDI and read files."
       license: MIT
