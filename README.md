@@ -68,7 +68,7 @@ Tools:
 | `send_midi` | any MIDI message: CC, program change, pitch bend, pressure, transport (start/stop/continue/clock), MMC, raw SysEx |
 | `type_text`, `press_key` | type into the text field MPC has focused, through a virtual USB keyboard (Enter, Backspace, arrows, `Ctrl+A` ...) |
 | `list_buttons`, `press_button`, `learn_button` | the device's hardware buttons: list them, press one (transport, views, arrows, menu ...), or teach the server a button by pressing it on the device |
-| `turn_knob`, `button_listen` | turn a knob or wheel (a `NAME=ccN` profile entry) by clicks of its relative encoder; or list what the device's own controls send MPC for a few seconds (notes and controllers, with the Force's name for a matching note), to work out a new device's profile |
+| `turn_knob`, `button_listen` | turn a knob or wheel (a `NAME=ccN` profile entry) by clicks of its relative encoder; or list what the device's own controls send MPC for a few seconds (notes and controllers, with the profile's name for each one it has), to work out a new device's profile |
 | `midi_listen` | collect what MPC sends to the addin's MIDI input port for a while |
 | `midi_status` | the addin's MIDI port and the device's MIDI clients and connections |
 | `device_status` | OS, uptime, CPU (and MPC's share), memory, temperatures, storage, network addresses |
@@ -225,6 +225,9 @@ something else (MockbaMod's MidiLoop swaps in a "Virtual RawMIDI" port), the add
   MENU, MATRIX, CLIP, MIXER, NOTE, KNOBS, LAUNCH, EDIT, SHIFT, COPY, MUTE, SOLO, ARM and the four arrows (measured on a
   Force: a press is a channel-1 note on with velocity 127, a release velocity 0). The rest of the Force's buttons are
   taught with `learn_button`.
+- **MPC Live III:** built in too (found by its MIDI client): the buttons, SEQ1-16, PAD1-16 (channel 10), QLINK1-4 (their
+  touch notes) and the knobs QLINK1-4-TURN and WHEEL. It has no CLIP, SOLO or arrows; MATRIX is SHIFT + ARRANGE, LAUNCH is
+  SET + SEQ7 and ARM is SET + SEQ10, so hold SET or SHIFT on the page and press the other.
 - **Other devices:** start with no buttons. `learn_button` waits for you to press a button on the device and records its
   note under the name you give. Learned buttons are saved in `buttons.conf` next to the `.so` (`NAME=note [channel]`,
   edit freely; it overrides a built-in entry of the same name), and the page and `press_button` then use them. A
