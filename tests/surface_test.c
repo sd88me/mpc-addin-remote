@@ -69,12 +69,19 @@ int main(void)
 
     // a pad (ch 10) then a press, then the pad's release in running status: its status byte is put back
     const unsigned char pad[] = { 0x99, 36, 100 }, pad_off_run[] = { 36, 0 };
+    unsigned long tp = surface_tap_pos();
     fake_hw_write(pad, 3);
     CHECK(mpc_read(in, b, sizeof b, 1000) == 3);
     CHECK(surface_send(play) == 0);
     fake_hw_write(pad_off_run, 2);
     CHECK(mpc_read(in, b, sizeof b, 1000) == 3 && !memcmp(b, play, 3));
     CHECK(mpc_read(in, b, sizeof b, 1000) == 3 && b[0] == 0x99 && b[1] == 36 && b[2] == 0);
+    {   // the tap saw the hardware's two messages (the release's status restored from running status), not the press
+        uint8_t m[3];
+        CHECK(surface_tap_next(&tp, m) == 1 && m[0] == 0x99 && m[1] == 36 && m[2] == 100);
+        CHECK(surface_tap_next(&tp, m) == 1 && m[0] == 0x99 && m[1] == 36 && m[2] == 0);
+        CHECK(surface_tap_next(&tp, m) == 0);
+    }
 
     // MPC reading one byte at a time gets the whole press, in order
     CHECK(surface_send(play) == 0);
