@@ -96,10 +96,11 @@ endpoint through DNS rebinding. Bodies are limited to 64 KB. `mcp=0` turns the e
   (XRGB/XBGR 8888, RGB565) come from the device; tiled or compressed buffers are refused. The scanout is the
   physical panel, which may be portrait with the UI drawn into it on its side (the MPC Key 37's is 800 x 1280):
   `screen_rotate` turns it upright (auto: a portrait scanout turns 90 degrees, since MPC's UI is landscape). The DRM ioctls are
-  written out in `src/drm_min.h`, so the build needs no kernel or libdrm headers. **Gen2 (RK3588) risk, untested:**
-  if its display driver scans out through a tiled/compressed modifier (e.g. AFBC) instead of a linear buffer, capture
-  reports `E_FORMAT` ("tiled or compressed: not readable as plain rows") rather than crashing or reading garbage, but
-  the addin would then have no screen at all on that device; not known either way without a real Gen2 run.
+  written out in `src/drm_min.h`, so the build needs no kernel or libdrm headers. **Gen2 (RK3588):** confirmed on a
+  Live III (2026-10-23, `tested.json`) that its display scans out a linear buffer, not a tiled/compressed modifier
+  (e.g. AFBC) -- capture works (`"capture":"ok"`, 1280x800). Had it been tiled, capture would have reported
+  `E_FORMAT` ("tiled or compressed: not readable as plain rows") rather than crashing or reading garbage, but the
+  addin would have had no screen at all on that device; a different Gen2 model's display pipeline is still unknown.
 - **PNG:** zlib, loaded at run time (`libz.so.1`, already loaded by MPC); level 1. Before encoding, a CRC of the
   frame is compared with the last one sent, so a still screen costs a capture and a CRC, not an encode.
 - **Touch:** events written into the touchscreen's own evdev node, which MPC reads like a real finger (slot 0 of
@@ -146,8 +147,8 @@ Settings are read when MPC starts.
 
 ## Install
 
-Needs root on the device (SSH). Unzip a release (`MPC-Remote-addin-<version>-mpc-armv7.zip`) on the device and run, as root,
-in its folder:
+Needs root on the device (SSH). Unzip the release zip for your device
+(`MPC-Remote-addin-<version>-mpc-armv7.zip` for Gen1, `-mpc-aarch64.zip` for Gen2) and run, as root, in its folder:
 
 ```sh
 sh install.sh            # asks first; -y doesn't ask, -n doesn't restart MPC, -t <folder> installs elsewhere
